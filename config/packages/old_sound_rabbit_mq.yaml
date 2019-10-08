@@ -8,8 +8,8 @@ old_sound_rabbit_mq:
 #            connection:       default
 #            exchange_options: { name: 'task', type: direct }
     consumers:
-        broker_check_command:
+        new_comment:
             connection:       default
-            exchange_options: { name: 'tj.v1.broker_check_command', type: direct }
-            queue_options:    { name: 'tj.v1.broker_check_command'}
-            callback:         App\Consumer\BrokerCheckCommandConsumer
+            exchange_options: { name: 'tj.v1.new_comment', type: direct }
+            queue_options:    { name: 'tj.v1.new_comment'}
+            callback:         App\Consumer\NewCommentConsumer

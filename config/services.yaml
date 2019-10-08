@@ -22,13 +22,24 @@ services:
     App\Controller\:
         resource: '../src/Controller'
         tags: ['controller.service_arguments']
-    App\Service\TjUserService:
-        name: 'service.tjuser'
+    App\Service\BrokerService:
+        public: false
         arguments:
-            - '@old_sound_rabbit_mq.broker_check_command_producer'
-    App\Consumer\BrokerCheckCommandConsumer:
+            - '@doctrine.orm.entity_manager'
+    app.tj.broker:
+        alias: App\Service\BrokerService
+        public: true
+    App\Service\BalanceService:
+        public: false
         arguments:
-            - '@service.tjuser'
+            - '@doctrine.orm.entity_manager'
+    app.tj.balance:
+        alias: App\Service\BalanceService
+        public: true
+    App\Consumer\NewCommentConsumer:
+        public: false
+        arguments:
+            - '@app.tj.broker'
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
