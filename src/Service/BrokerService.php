@@ -41,9 +41,13 @@ class BrokerService
             try {
                 $result = $api->sendComment($contentTjId, $msg, $commentData['tj_id']);
             } catch (\Exception $e) {
-                echo $e->getMessage().PHP_EOL;
-                echo $e->getFile().' '.$e->getLine().PHP_EOL;
-                throw $e;
+                if(strpos($e->getMessage(), '404 Not Found') === false) {
+                    echo $e->getMessage() . PHP_EOL;
+                    echo $e->getFile() . ' ' . $e->getLine() . PHP_EOL;
+                    throw $e;
+                } else {
+                    echo 'Станица на ТЖ не найдена'.PHP_EOL;
+                }
             }
             return;
         }
