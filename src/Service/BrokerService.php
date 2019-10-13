@@ -50,10 +50,41 @@ class BrokerService
                 }
             }
             return;
+        } elseif (strpos(mb_strtoupper($commentText), 'ИНФОРМАЦИЯ О') !== false) {
+            $matches = [];
+            $regExp = '/[\[]{1}[@]{1}([\d]{1,})/';
+            preg_match_all($regExp, $commentText, $matches);
+            if(isset($matches[1]) && count($matches[1]) < 2) {
+                echo 'Недостаточно упоминаний в тексте'.PHP_EOL;
+                return;
+            }
+            if($matches[1][0] != 268765) {
+                echo 'Первым надо упомянуть бота'.PHP_EOL;
+            }
+            if($matches[1][1] == 268765) {
+                echo 'Вторым надо упомянуть НЕ бота'.PHP_EOL;
+            }
+            $ipo = $this->IPO($matches[1][1]);
+            $msg = $this->printIPOInfo($ipo);
+            $api = new Api(Api::TJOURNAL, $token);
+            $result = $api->sendComment($contentTjId, $msg, $commentData['tj_id']);
+            return;
         }
         $msg = 'Я пока не знаю такой команды :(';
         $api = new Api(Api::TJOURNAL, $token);
         $result = $api->sendComment($contentTjId, $msg, $commentData['tj_id']);
+    }
+
+    /**
+     * @param PublicOffering $ipo
+     * @return string
+     */
+    public function printIPOInfo($ipo)
+    {
+        $msg = $ipo->getTitle(). PHP_EOL;
+        $msg .= 'Акций выпущено: ' .$ipo->getStocksCount().PHP_EOL;
+        $msg .= 'Стоимость одной акции: ' .$ipo->getStartPrice().PHP_EOL;
+        return $msg;
     }
 
     public function IPO($tjUserId)
@@ -67,15 +98,28 @@ class BrokerService
         }
         $client = new Client();
         $url = $_ENV['TJ_WEBHOOK_SERVICE_URL'];
-        $tjUserData = $client->get($url . 'api/getUserInfo/{id}')->getBody()->getContents();
+        $tjUserData = $client->get($url . 'api/getUserInfo/' . $tjUserId)->getBody()->getContents();
+        $tjUserData = json_decode($tjUserData, true);
         $po = new PublicOffering();
         $po->setTjUserId($tjUserId);
         $po->setPublicDate(new \DateTime());
-//        $po->setTitle()
+        $po->setTitle($this->generateTitle($tjUserData));
+        $karma = (int) $tjUserData['karma'];
+        if($karma < 0) {
+            $karma = 100;
+        }
+        $stockCount = 1000;
+        $startPrice = ((float) $karma/$stockCount);
+        $startPrice = floor($startPrice * 100) / 100;
+        $po->setStartPrice($startPrice);
+        $po->setStocksCount($stockCount);
+        $this->em->persist($po);
+        $this->em->flush();
+        return $po;
     }
 
-    public function generateTitle()
+    public function generateTitle($tjUserData)
     {
-
+        return 'NASDAQ-'.random_int(111,999);
     }
 }
