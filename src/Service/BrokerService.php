@@ -1,8 +1,10 @@
 <?php
 namespace App\Service;
 
+use App\Entity\PublicOffering;
 use Benyazi\CmttPhp\Api;
 use Doctrine\ORM\EntityManagerInterface;
+use GuzzleHttp\Client;
 use http\Env;
 
 class BrokerService
@@ -36,11 +38,40 @@ class BrokerService
         if(strpos(mb_strtoupper($commentText), 'МОЙ БАЛАНС') !== false) {
             $msg = 'Твой баланс: ' . $this->balanceService->printCurrent($creatorTjId);
             $api = new Api(Api::TJOURNAL, $token);
-            $result = $api->sendComment($contentTjId, $msg, $commentData['tj_id']);
+            try {
+                $result = $api->sendComment($contentTjId, $msg, $commentData['tj_id']);
+            } catch (\Exception $e) {
+                echo $e->getMessage().PHP_EOL;
+                echo $e->getFile().' '.$e->getLine().PHP_EOL;
+                throw $e;
+            }
             return;
         }
         $msg = 'Я пока не знаю такой команды :(';
         $api = new Api(Api::TJOURNAL, $token);
         $result = $api->sendComment($contentTjId, $msg, $commentData['tj_id']);
+    }
+
+    public function IPO($tjUserId)
+    {
+        $po = $this->em->getRepository(PublicOffering::class)
+            ->findOneBy([
+                'tjUserId' => $tjUserId
+            ]);
+        if(!empty($po)) {
+            return $po;
+        }
+        $client = new Client();
+        $url = $_ENV['TJ_WEBHOOK_SERVICE_URL'];
+        $tjUserData = $client->get($url . 'api/getUserInfo/{id}')->getBody()->getContents();
+        $po = new PublicOffering();
+        $po->setTjUserId($tjUserId);
+        $po->setPublicDate(new \DateTime());
+//        $po->setTitle()
+    }
+
+    public function generateTitle()
+    {
+
     }
 }
