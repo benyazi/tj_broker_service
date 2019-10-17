@@ -114,9 +114,17 @@ class BrokerService
                 return;
             }
             $count = $output_array[1];
-            $operation = $this->createNewPurchase($commentData['tj_id'], $commentData['creator_tj_id'], $matches[1][1], $count);
-            $this->processOperation($operation);
-            $msg = $this->printOperationResult($operation);
+            try {
+                $operation = $this->createNewPurchase($commentData['tj_id'], $commentData['creator_tj_id'], $matches[1][1], $count);
+                $this->processOperation($operation);
+                $msg = $this->printOperationResult($operation);
+            } catch (\Exception $e) {
+                if(in_array($e->getCode(), [510])) {
+                    $msg = $e->getMessage();
+                } else {
+                    return;
+                }
+            }
             $api = new Api(Api::TJOURNAL, $token);
             $result = $api->sendComment($contentTjId, $msg, $commentData['tj_id']);
             return;
@@ -143,9 +151,17 @@ class BrokerService
                 return;
             }
             $count = $output_array[1];
-            $operation = $this->createNewSale($commentData['tj_id'], $commentData['creator_tj_id'], $matches[1][1], $count);
-            $this->processOperation($operation);
-            $msg = $this->printOperationResult($operation);
+            try {
+                $operation = $this->createNewSale($commentData['tj_id'], $commentData['creator_tj_id'], $matches[1][1], $count);
+                $this->processOperation($operation);
+                $msg = $this->printOperationResult($operation);
+            } catch (\Exception $e) {
+                if(in_array($e->getCode(), [510])) {
+                    $msg = $e->getMessage();
+                } else {
+                    return;
+                }
+            }
             $api = new Api(Api::TJOURNAL, $token);
             $result = $api->sendComment($contentTjId, $msg, $commentData['tj_id']);
             return;
@@ -347,7 +363,7 @@ class BrokerService
         $needMoney = $currentPrice->getPrice() * $count;
         $needMoney = floor($needMoney * 100) / 100;
         if($balance < $needMoney) {
-            throw new \Exception('Недостаточно денег для покупки акций', 511);
+            throw new \Exception('Недостаточно денег для покупки акций', 510);
         }
         $stockOperation = new StockOperation();
         $stockOperation->setCommentId($commentId);
@@ -417,7 +433,7 @@ class BrokerService
                 $stockOperation->setStatus(StockOperation::STATUS_CLOSED);
                 $stockOperation->setResult(StockOperation::RESULT_CANCEL);
                 $this->em->flush();
-                throw new \Exception('Недостаточно акция для продажи', 512);
+                throw new \Exception('Недостаточно акция для продажи', 510);
             }
             $stockPortfolio->setCount($stockPortfolio->getCount() - $stockOperation->getCount());
         }
