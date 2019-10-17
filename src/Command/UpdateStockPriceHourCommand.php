@@ -39,8 +39,8 @@ class UpdateStockPriceHourCommand extends Command
     {
         $output->writeln('=== NEW PRICE CALCULATION ===');
         $now = new \DateTime();
-        $from = (clone $now)->setTime(9,0,0,0);
-        $to = (clone $now)->setTime(22,0,0,0);
+        $from = (clone $now)->setTime(5,55,0,0);
+        $to = (clone $now)->setTime(22,55,0,0);
         if($now > $to || $now < $from) {
             $output->writeln('NOT WORKING, NOW '.$now->format('H:i'));
             return;
