@@ -49,4 +49,36 @@ class BalanceService
         $this->em->flush();
         return $balance;
     }
+
+    public function withDraw($userId, $amount, $reason, $desc = '')
+    {
+        $current = $this->getCurrent($userId);
+        $result = $current - $amount;
+        $balance = new BalanceHistory();
+        $balance->setTjUserId($userId);
+        $balance->setAmount($amount);
+        $balance->setOperationDate(new \DateTime());
+        $balance->setOperationDescription($desc);
+        $balance->setOperationType(BalanceHistory::TYPE_WRITE_OFF);
+        $balance->setOperationReason($reason);
+        $balance->setResult($result);
+        $this->em->persist($balance);
+        $this->em->flush();
+    }
+
+    public function refill($userId, $amount, $reason, $desc = '')
+    {
+        $current = $this->getCurrent($userId);
+        $result = $current + $amount;
+        $balance = new BalanceHistory();
+        $balance->setTjUserId($userId);
+        $balance->setAmount($amount);
+        $balance->setOperationDate(new \DateTime());
+        $balance->setOperationDescription($desc);
+        $balance->setOperationType(BalanceHistory::TYPE_REFILL);
+        $balance->setOperationReason($reason);
+        $balance->setResult($result);
+        $this->em->persist($balance);
+        $this->em->flush();
+    }
 }

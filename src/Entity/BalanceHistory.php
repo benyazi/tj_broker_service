@@ -11,6 +11,8 @@ class BalanceHistory
     const TYPE_REFILL = 'refill';
 
     const REASON_START = 'start-balance';
+    const REASON_PURCHASE = 'purchase';
+    const REASON_SALE = 'sale';
     /**
      * @ORM\Id
      * @ORM\GeneratedValue

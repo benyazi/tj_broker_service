@@ -1,8 +1,12 @@
 <?php
 namespace App\Service;
 
+use App\Entity\BalanceHistory;
 use App\Entity\PublicOffering;
+use App\Entity\StockOperation;
+use App\Entity\StockPortfolio;
 use App\Entity\StockPrice;
+use App\Repository\StockPortfolioRepository;
 use Benyazi\CmttPhp\Api;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
@@ -53,6 +57,21 @@ class BrokerService
                 }
             }
             return;
+        } elseif(strpos(mb_strtoupper($commentText), 'МОИ АКЦИИ') !== false) {
+            $msg = 'Твой портфель: ' . PHP_EOL. $this->printPortfolioList($creatorTjId);
+            $api = new Api(Api::TJOURNAL, $token);
+            try {
+                $result = $api->sendComment($contentTjId, $msg, $commentData['tj_id']);
+            } catch (\Exception $e) {
+                if(strpos($e->getMessage(), '404 Not Found') === false) {
+                    echo $e->getMessage() . PHP_EOL;
+                    echo $e->getFile() . ' ' . $e->getLine() . PHP_EOL;
+                    throw $e;
+                } else {
+                    echo 'Станица на ТЖ не найдена'.PHP_EOL;
+                }
+            }
+            return;
         } elseif (strpos(mb_strtoupper($commentText), 'ИНФОРМАЦИЯ О') !== false) {
             $matches = [];
             $regExp = '/[\[]{1}[@]{1}([\d]{1,})/';
@@ -69,6 +88,64 @@ class BrokerService
             }
             $ipo = $this->IPO($matches[1][1]);
             $msg = $this->printIPOInfo($ipo);
+            $api = new Api(Api::TJOURNAL, $token);
+            $result = $api->sendComment($contentTjId, $msg, $commentData['tj_id']);
+            return;
+        } elseif (strpos(mb_strtoupper($commentText), 'КУПИТЬ') !== false) {
+            $matches = [];
+            $regExp = '/[\[]{1}[@]{1}([\d]{1,})/';
+            preg_match_all($regExp, $commentText, $matches);
+            if(isset($matches[1]) && count($matches[1]) < 2) {
+                echo 'Недостаточно упоминаний в тексте'.PHP_EOL;
+                return;
+            }
+            if($matches[1][0] != 268765) {
+                echo 'Первым надо упомянуть бота'.PHP_EOL;
+                return;
+            }
+            if($matches[1][1] == 268765) {
+                echo 'Вторым надо упомянуть НЕ бота'.PHP_EOL;
+                return;
+            }
+            $output_array = [];
+            preg_match('/КУПИТЬ ([\d]{1,})/', mb_strtoupper($commentText), $output_array);
+            if(count($output_array) != 2 || $output_array[1] < 1) {
+                echo 'Необходимо написать, например, "купить 100"';
+                return;
+            }
+            $count = $output_array[1];
+            $operation = $this->createNewPurchase($commentData['tj_id'], $commentData['creator_tj_id'], $matches[1][1], $count);
+            $this->processOperation($operation);
+            $msg = $this->printOperationResult($operation);
+            $api = new Api(Api::TJOURNAL, $token);
+            $result = $api->sendComment($contentTjId, $msg, $commentData['tj_id']);
+            return;
+        } elseif (strpos(mb_strtoupper($commentText), 'ПРОДАТЬ') !== false) {
+            $matches = [];
+            $regExp = '/[\[]{1}[@]{1}([\d]{1,})/';
+            preg_match_all($regExp, $commentText, $matches);
+            if(isset($matches[1]) && count($matches[1]) < 2) {
+                echo 'Недостаточно упоминаний в тексте'.PHP_EOL;
+                return;
+            }
+            if($matches[1][0] != 268765) {
+                echo 'Первым надо упомянуть бота'.PHP_EOL;
+                return;
+            }
+            if($matches[1][1] == 268765) {
+                echo 'Вторым надо упомянуть НЕ бота'.PHP_EOL;
+                return;
+            }
+            $output_array = [];
+            preg_match('/ПРОДАТЬ ([\d]{1,})/', mb_strtoupper($commentText), $output_array);
+            if(count($output_array) != 2 || $output_array[1] < 1) {
+                echo 'Необходимо написать, например, "продать 100"';
+                return;
+            }
+            $count = $output_array[1];
+            $operation = $this->createNewSale($commentData['tj_id'], $commentData['creator_tj_id'], $matches[1][1], $count);
+            $this->processOperation($operation);
+            $msg = $this->printOperationResult($operation);
             $api = new Api(Api::TJOURNAL, $token);
             $result = $api->sendComment($contentTjId, $msg, $commentData['tj_id']);
             return;
@@ -103,8 +180,15 @@ class BrokerService
         return $tjUserData;
     }
 
+    /**
+     * @param $tjUserId
+     * @return PublicOffering
+     * @throws \Doctrine\ORM\ORMException
+     * @throws \Doctrine\ORM\OptimisticLockException
+     */
     public function IPO($tjUserId)
     {
+        /** @var PublicOffering $po */
         $po = $this->em->getRepository(PublicOffering::class)
             ->findOneBy([
                 'tjUserId' => $tjUserId
@@ -126,6 +210,7 @@ class BrokerService
         $startPrice = floor($startPrice * 100) / 100;
         $po->setStartPrice($startPrice);
         $po->setStocksCount($stockCount);
+        $po->setAllowedStocksCount($stockCount);
         $this->em->persist($po);
 
         $stockPrice = new StockPrice();
@@ -219,5 +304,177 @@ class BrokerService
         $newPrice->setPublicOffering($ipo);
         $this->em->persist($newPrice);
         $this->em->flush();
+    }
+
+    /**
+     * @param PublicOffering $po
+     * @return StockPrice
+     * @throws \Exception
+     */
+    public function getCurrentPrice(PublicOffering $po)
+    {
+        $currentPrice = $this->em->getRepository(StockPrice::class)
+            ->createQueryBuilder('sp')
+            ->andWhere('sp.publicOfferingId = :publicOfferingId')->setParameter('publicOfferingId', $po->getId())
+            ->orderBy('sp.priceDate', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()->getResult();
+        if(empty($currentPrice)) {
+            throw new \Exception('not found price');
+        }
+        /** @var StockPrice $currentPrice */
+        $currentPrice = $currentPrice[0];
+        return $currentPrice;
+    }
+
+    /**
+     * @param $commentId
+     * @param $fromUserId
+     * @param $targetUserId
+     * @param int $count
+     * @return StockOperation
+     * @throws \Doctrine\ORM\ORMException
+     * @throws \Doctrine\ORM\OptimisticLockException
+     */
+    public function createNewPurchase($commentId, $fromUserId, $targetUserId, $count)
+    {
+        $po = $this->IPO($targetUserId);
+        if($po->getAllowedStocksCount() < $count) {
+            throw new \Exception('Недостаточно свободных акций', 510);
+        }
+        $balance = $this->balanceService->getCurrent($fromUserId);
+        $currentPrice = $this->getCurrentPrice($po);
+        $needMoney = $currentPrice->getPrice() * $count;
+        $needMoney = floor($needMoney * 100) / 100;
+        if($balance < $needMoney) {
+            throw new \Exception('Недостаточно денег для покупки акций', 511);
+        }
+        $stockOperation = new StockOperation();
+        $stockOperation->setCommentId($commentId);
+        $stockOperation->setPublicOffering($po);
+        $stockOperation->setPrice($currentPrice->getPrice());
+        $stockOperation->setCount($count);
+        $stockOperation->setOperationType(StockOperation::OPERATION_TYPE_PURCHASE);
+        $stockOperation->setOperationDate(new \DateTime());
+        $stockOperation->setUserId($fromUserId);
+        $stockOperation->setStatus(StockOperation::STATUS_NEW);
+        $this->em->persist($stockOperation);
+        $this->em->flush();
+        return $stockOperation;
+    }
+
+    /**
+     * @param $commentId
+     * @param $fromUserId
+     * @param $targetUserId
+     * @param int $count
+     * @return StockOperation
+     * @throws \Doctrine\ORM\ORMException
+     * @throws \Doctrine\ORM\OptimisticLockException
+     */
+    public function createNewSale($commentId, $fromUserId, $targetUserId, $count)
+    {
+        $po = $this->IPO($targetUserId);
+//        if($po->getAllowedStocksCount() < $count) {
+//            throw new \Exception('Недостаточно свободных акций', 510);
+//        }
+//        $balance = $this->balanceService->getCurrent($fromUserId);
+        $currentPrice = $this->getCurrentPrice($po);
+//        $needMoney = $currentPrice->getPrice() * $count;
+//        $needMoney = floor($needMoney * 100) / 100;
+//        if($balance < $needMoney) {
+//            throw new \Exception('Недостаточно денег для покупки акций', 511);
+//        }
+        $stockOperation = new StockOperation();
+        $stockOperation->setCommentId($commentId);
+        $stockOperation->setPublicOffering($po);
+        $stockOperation->setPrice($currentPrice->getPrice());
+        $stockOperation->setCount($count);
+        $stockOperation->setOperationType(StockOperation::OPERATION_TYPE_SALE);
+        $stockOperation->setOperationDate(new \DateTime());
+        $stockOperation->setUserId($fromUserId);
+        $stockOperation->setStatus(StockOperation::STATUS_NEW);
+        $this->em->persist($stockOperation);
+        $this->em->flush();
+        return $stockOperation;
+    }
+
+    /**
+     * @param StockOperation $stockOperation
+     * @throws \Doctrine\ORM\ORMException
+     * @throws \Doctrine\ORM\OptimisticLockException
+     */
+    public function processOperation(StockOperation $stockOperation)
+    {
+        /** @var StockPortfolioRepository $rep */
+        $rep = $this->em->getRepository(StockPortfolio::class);
+        $stockPortfolio = $rep->getByUserAndPoOrCreate($stockOperation->getUserId(), $stockOperation->getPublicOffering());
+        if($stockOperation->getOperationType() == StockOperation::OPERATION_TYPE_PURCHASE) {
+            $stockPortfolio->setCount($stockPortfolio->getCount() + $stockOperation->getCount());
+        } else {
+            //check
+            if($stockOperation->getCount() > $stockPortfolio->getCount()) {
+                $stockOperation->setStatus(StockOperation::STATUS_CLOSED);
+                $stockOperation->setResult(StockOperation::RESULT_CANCEL);
+                $this->em->flush();
+                throw new \Exception('Недостаточно акция для продажи', 512);
+            }
+            $stockPortfolio->setCount($stockPortfolio->getCount() - $stockOperation->getCount());
+        }
+        $stockOperation->setStatus(StockOperation::STATUS_CLOSED);
+        $stockOperation->setResult(StockOperation::RESULT_SUCCESS);
+
+        $amount = $stockOperation->getPrice() * $stockOperation->getCount();
+        $amount = floor($amount * 100) / 100;
+        $po = $stockOperation->getPublicOffering();
+        if($stockOperation->getOperationType() == StockOperation::OPERATION_TYPE_PURCHASE) {
+            $po->setAllowedStocksCount($po->getAllowedStocksCount() - $stockOperation->getCount());
+            $this->balanceService->withDraw($stockOperation->getUserId(), $amount, BalanceHistory::REASON_PURCHASE, 'Покупка акции по операции №' . $stockOperation->getId());
+        } else {
+            $po->setAllowedStocksCount($po->getAllowedStocksCount() + $stockOperation->getCount());
+            $this->balanceService->refill($stockOperation->getUserId(), $amount, BalanceHistory::REASON_SALE, 'Продажа акции по операции №' . $stockOperation->getId());
+        }
+
+        $this->em->flush();
+    }
+
+    /**
+     * @param StockOperation $so
+     * @return string
+     */
+    public function printOperationResult(StockOperation $so)
+    {
+        $count = $so->getCount();
+        $price = $so->getPrice() * $count;
+        if($so->getResult() == StockOperation::RESULT_SUCCESS) {
+            if($so->getOperationType() == StockOperation::OPERATION_TYPE_PURCHASE) {
+                return "Вы успешно приобрели $count акций за $price";
+            } else {
+                return "Вы успешно продали $count акций за $price";
+            }
+        }
+        return "Операция завершилась неудачно :(";
+    }
+
+    public function printPortfolioList($userId)
+    {
+        /** @var StockPortfolioRepository $rep */
+        $rep = $this->em->getRepository(StockPortfolio::class);
+        $portfolios = $rep->getByUser($userId);
+        if(empty($portfolios)) {
+            return 'Список пока пуст :(';
+        }
+        $list = '';
+        /** @var StockPortfolio $portfolio */
+        foreach ($portfolios as $portfolio)
+        {
+            $count = $portfolio->getCount();
+            $po = $portfolio->getPublicOffering();
+            $currentPrice = $this->getCurrentPrice($po)->getPrice();
+            $name = $po->getTitle();
+            $price = $currentPrice * $count;
+            $list .= "*$name*: $currentPrice * $count = $price".PHP_EOL;
+        }
+        return $list;
     }
 }

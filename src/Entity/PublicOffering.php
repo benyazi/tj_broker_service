@@ -40,6 +40,11 @@ class PublicOffering
     private $stocksCount;
 
     /**
+     * @ORM\Column(type="integer")
+     */
+    private $allowedStocksCount = 0;
+
+    /**
      * @ORM\Column(type="decimal", precision=12, scale=2)
      */
     private $startPrice;
@@ -131,6 +136,24 @@ class PublicOffering
     public function setStartPrice($startPrice)
     {
         $this->startPrice = $startPrice;
+        return $this;
+    }
+
+    /**
+     * @return int
+     */
+    public function getAllowedStocksCount(): int
+    {
+        return $this->allowedStocksCount;
+    }
+
+    /**
+     * @param int $allowedStocksCount
+     * @return PublicOffering
+     */
+    public function setAllowedStocksCount(int $allowedStocksCount): PublicOffering
+    {
+        $this->allowedStocksCount = $allowedStocksCount;
         return $this;
     }
 }
