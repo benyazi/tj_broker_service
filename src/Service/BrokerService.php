@@ -42,6 +42,13 @@ class BrokerService
             return;
         }
         $token = $_ENV['TJ_BROKER_TOKEN'];
+        $allowedUsers = [21900];
+        if(!in_array($creatorTjId, $allowedUsers)) {
+            $msg = 'Я пока не в открытом доступе.';
+            $api = new Api(Api::TJOURNAL, $token);
+            $result = $api->sendComment($contentTjId, $msg, $commentData['tj_id']);
+            return;
+        }
         if(strpos(mb_strtoupper($commentText), 'МОЙ БАЛАНС') !== false) {
             $msg = 'Твой баланс: ' . $this->balanceService->printCurrent($creatorTjId);
             $api = new Api(Api::TJOURNAL, $token);
