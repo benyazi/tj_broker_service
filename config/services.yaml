@@ -32,6 +32,10 @@ services:
         arguments:
             - '@app.tj.broker'
             - '@doctrine.orm.entity_manager'
+    App\Command\EmulateStockPriceCommand:
+        arguments:
+            - '@app.tj.broker'
+            - '@doctrine.orm.entity_manager'
     App\Service\BrokerService:
         public: false
         arguments:

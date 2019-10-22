@@ -293,8 +293,9 @@ class BrokerService
 
     /**
      * @param PublicOffering $ipo
+     * @param \DateTime|null $forDate
      */
-    public function calculateNewPrice($ipo)
+    public function calculateNewPrice($ipo, $forDate = null)
     {
         $currentPrice = $this->em->getRepository(StockPrice::class)
             ->createQueryBuilder('sp')
@@ -308,21 +309,37 @@ class BrokerService
         /** @var StockPrice $currentPrice */
         $currentPrice = $currentPrice[0];
         $tjUserData = $this->getUserData($ipo->getTjUserId());
+
+        $oldKarma = $currentPrice->getCurrentKarma();
         $newKarma = $tjUserData['karma'];
 
-        $price = ((float) $newKarma/$ipo->getStocksCount());
-        $price = floor($price * 100) / 100;
+        $growth = $newKarma - $oldKarma;
+        $aveGrowth = $this->getAverageGrowth($ipo);
+        if($aveGrowth == 0.0) {
+            $aveGrowth = $growth;
+        }
+        $diff = $growth - $aveGrowth;
 
-        $diff = $price - $currentPrice->getPrice();
+        $oldPrice = $currentPrice->getPrice();
+        $price = $oldPrice;
+        if($diff >= 5) {
+            $price += floor($oldPrice*0.04 * 100) / 100;
+        } elseif($diff >= 1) {
+            $price += floor($oldPrice*0.02 * 100) / 100;
+        } elseif($diff < 1 && $diff > -1) {
+
+        } else {
+            $price -= floor($oldPrice*0.01 * 100) / 100;
+        }
         $inflation = $currentPrice->getInflation();
-
-        $newCalculatedPrice = $price;
-
         $newPrice = new StockPrice();
         $newPrice->setOldKarma($currentPrice->getCurrentKarma());
         $newPrice->setCurrentKarma($newKarma);
-        $newPrice->setPrice($newCalculatedPrice);
-        $newPrice->setPriceDate(new \DateTime());
+        $newPrice->setPrice($price);
+        if($forDate == null) {
+            $forDate = new \DateTime();
+        }
+        $newPrice->setPriceDate($forDate);
         $newPrice->setInflation($inflation);
         $newPrice->setPublicOffering($ipo);
         $this->em->persist($newPrice);
@@ -499,5 +516,56 @@ class BrokerService
             $list .= "*$name*: $currentPrice * $count = $price".PHP_EOL;
         }
         return $list;
+    }
+
+    /**
+     * @param PublicOffering $po
+     * @return float
+     */
+    public function getAverageGrowth(PublicOffering $po)
+    {
+        $dt = (new \DateTime())->sub(new \DateInterval('P7D'));
+        $prices = $this->em->getRepository(StockPrice::class)
+            ->createQueryBuilder('p')
+            ->andWhere('p.publicOffering = :po')->setParameter('po', $po)
+            ->andWhere('p.priceDate > :dt')->setParameter('dt', $dt)
+            ->getQuery()->getResult();
+        $values = [];
+        $index = 0;
+        $min = $max = 0;
+        $minIndex = $maxIndex = null;
+        /** @var StockPrice $price */
+        foreach ($prices as $price)
+        {
+            if($price->getOldKarma() < 1) {
+                continue;
+            }
+            $value = $price->getCurrentKarma() - $price->getOldKarma();
+            $values[$index] = $value;
+            if($min > $value) {
+                $min = $value;
+                $minIndex = $index;
+            }
+            if($max < $value) {
+                $max = $value;
+                $maxIndex = $index;
+            }
+            $index++;
+        }
+        $count = 0;
+        $summa = 0;
+        foreach ($values as $key => $value)
+        {
+            if($key == $minIndex || $key == $maxIndex) {
+                continue;
+            }
+            $count++;
+            $summa += $value;
+        }
+        if($count == 0) {
+            return 0.0;
+        }
+        $ave = $summa/$count;
+        return floor($ave * 100) / 100;
     }
 }
