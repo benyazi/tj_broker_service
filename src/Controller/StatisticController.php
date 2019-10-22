@@ -28,35 +28,68 @@ class StatisticController extends AbstractController
         $prices = $this->em->getRepository(StockPrice::class)
             ->createQueryBuilder('p')
             ->andWhere('p.priceDate > :dt')->setParameter('dt', $dt)
-            ->addOrderBy('p.publicOfferingId', 'ASC')
             ->addOrderBy('p.priceDate', 'ASC')
+            ->addOrderBy('p.publicOfferingId', 'ASC')
             ->getQuery()->getResult();
         $dates = [];
         $datasets = [];
+        $valuesByPoByDate = [];
         /** @var StockPrice $price */
         foreach ($prices as $price)
         {
-            if($price->getOldKarma() < 1) {
-                continue;
-            }
-            $value = $price->getCurrentKarma() - $price->getOldKarma();
-            if(!isset($dates[$price->getPriceDate()->format('d.m H')])) {
-                $dates[$price->getPriceDate()->format('d.m H')] = 1;
+            if(!in_array($price->getPriceDate()->format('d.m H'), $dates)) {
+                $dates[] = $price->getPriceDate()->format('d.m H');
             }
             if(!isset($datasets[$price->getPublicOfferingId()])) {
                 $datasets[$price->getPublicOfferingId()] = [
                     'label' => $price->getPublicOffering()->getTitle(),
                     'data' => [],
-//                    'backgroundColor' => 'red',
                     'borderColor' => '#'.$this->random_color(),
                     'borderWidth' => 1
                 ];
             }
-            $datasets[$price->getPublicOfferingId()]['data'][] = $value;
+            if(!isset($valuesByPoByDate[$price->getPublicOfferingId()])) {
+                $valuesByPoByDate[$price->getPublicOfferingId()] = [];
+            }
+            if($price->getOldKarma() < 1) {
+                continue;
+            }
+            $value = $price->getCurrentKarma() - $price->getOldKarma();
+            $valuesByPoByDate[$price->getPublicOfferingId()][$price->getPriceDate()->format('d.m H')] = $value;
         }
+        foreach ($valuesByPoByDate as $poId => $values) {
+            foreach ($dates as $date) {
+                if(isset($values[$date])) {
+                    $datasets[$poId]['data'][] = $values[$date];
+                } else {
+                    $datasets[$poId]['data'][] = 0;
+                }
+            }
+        }
+        /** @var StockPrice $price */
+//        foreach ($prices as $price)
+//        {
+//            if($price->getOldKarma() < 1) {
+//                continue;
+//            }
+//            $value = $price->getCurrentKarma() - $price->getOldKarma();
+//            if(!isset($dates[$price->getPriceDate()->format('d.m H')])) {
+//                $dates[$price->getPriceDate()->format('d.m H')] = 1;
+//            }
+//            if(!isset($datasets[$price->getPublicOfferingId()])) {
+//                $datasets[$price->getPublicOfferingId()] = [
+//                    'label' => $price->getPublicOffering()->getTitle(),
+//                    'data' => [],
+////                    'backgroundColor' => 'red',
+//                    'borderColor' => '#'.$this->random_color(),
+//                    'borderWidth' => 1
+//                ];
+//            }
+//            $datasets[$price->getPublicOfferingId()]['data'][] = $value;
+//        }
 
         return $this->render('statistic/index.html.twig', [
-            'dates' => array_keys($dates),
+            'dates' => array_values($dates),
             'datasets' => array_values($datasets)
         ]);
     }
