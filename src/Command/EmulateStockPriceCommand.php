@@ -20,6 +20,7 @@ class EmulateStockPriceCommand extends Command
     {
         $this
             ->addArgument('tjUserId')
+            ->addOption('force')
             // the short description shown while running "php bin/console list"
             ->setDescription('Creates a new user.')
             // the full command description shown when running the command with
@@ -38,6 +39,7 @@ class EmulateStockPriceCommand extends Command
     public function execute(InputInterface $input, OutputInterface $output)
     {
         $tjUserId = $input->getArgument('tjUserId');
+        $force = $input->getOption('force');
         $ipo = $this->brokerService->IPO($tjUserId);
         $output->writeln('=== START EMULATE ===');
         $prices = $this->em->getRepository(StockPrice::class)
@@ -75,6 +77,9 @@ class EmulateStockPriceCommand extends Command
             $prevPrice = $priceItem;
             $date = $priceItem->getPriceDate()->format('d.m.Y H:i');
             $output->writeln("Date $date <> KARMA $oldKarma -> $newKarma <> Price $oldPrice -> $price <> Growth $aveGrowth $growth");
+        }
+        if($force) {
+            $this->em->flush();
         }
     }
 }

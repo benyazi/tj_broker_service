@@ -323,9 +323,9 @@ class BrokerService
         $oldPrice = $currentPrice->getPrice();
         $price = $oldPrice;
         if($diff >= 5) {
-            $price += floor($oldPrice*0.04 * 100) / 100;
+            $price += floor($oldPrice*0.03 * 100) / 100;
         } elseif($diff >= 1) {
-            $price += floor($oldPrice*0.02 * 100) / 100;
+            $price += floor($oldPrice*0.01 * 100) / 100;
         } elseif($diff < 1 && $diff > -1) {
 
         } else {
